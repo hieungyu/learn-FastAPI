@@ -121,6 +121,7 @@ async def delete_book(book_id: int = Path(gt=0)):
             break
     if not book_changed:
         raise HTTPException(status_code=404, detail='Item not found')   
+        
 # assignment
 @app.get("/books/published_date/", status_code=status.HTTP_200_OK)
 async def get_published_date(published_date: int = Query(gt=1000, lt=2030) ):
