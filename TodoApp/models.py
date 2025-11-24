@@ -9,7 +9,8 @@ class Todos(Base):
     """
     Mã định danh duy nhất cho bản ghi || index = True chỉ là cách đê có thể tăng hiệu suất bằng cách thông cho bảng \
     CSDL rằng dữ liệu nãy sẽ là duy nhất
-    """
+    cho nay sai roi
+    """ 
     id = Column(Integer, primary_key= True) 
     title = Column(String)
     description = Column(String)
