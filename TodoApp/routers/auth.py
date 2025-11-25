@@ -6,11 +6,21 @@ from typing import Annotated
 from database import  Sessionlocal
 from sqlalchemy.orm import Session
 from starlette import status
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordRequestForm,OAuth2PasswordBearer
+from jose import jwt, JWSError
+from datetime import timedelta, datetime, timezone
 
-router = APIRouter()
+router = APIRouter(
+    prefix= '/auth',
+    tags=['auth']
+)
+
+SECRET_KEY = 'bbfe8e24735ba2b3d14d163f4570764121fce108ca0a5c012ce5f709cc3f85f0'
+ALOGRIMTHM = 'HS256'
+
 
 bcrypt_context = CryptContext(schemes=['bcrypt'], deprecated='auto')
+oauth2_bearer = OAuth2PasswordBearer(tokenUrl='auth/token')
 
 class CreateUserRequest(BaseModel):
     username : str
@@ -20,6 +30,11 @@ class CreateUserRequest(BaseModel):
     password : str
     role : str
 
+class Token(BaseModel):
+    access_token : str
+    token_type  :  str
+
+
 def get_db():
     db = Sessionlocal()
 
@@ -27,6 +42,7 @@ def get_db():
         yield db
     finally:
         db.close()
+
 
 db_dependency = Annotated[Session, Depends(get_db)]
 
@@ -38,10 +54,29 @@ def authenticate_user(username : str, password: str, db):
 
     if not bcrypt_context.verify(password, user.hashed_password):
         return False
-    return True
+    return user
+
+def create_access_token(username: str, user_id: int, expires_delta: timedelta):
+    
+    encode = {'sub': username, 'id': user_id}
+    expires = datetime.now(timezone.utc) + expires_delta
+    encode.update({'exp': expires})
+    return jwt.encode(encode, SECRET_KEY, algorithm=ALOGRIMTHM)
+async def get_crurrent_user(token: Annotated[str, Depends(oauth2_bearer)]): 
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALOGRIMTHM])
+        username: str = payload.get('sub')
+        user_id : int = payload.get(('id'))
+        if username is None or user_id is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                                detail='Could not validate user')
+        return {'username': username, 'id': user_id}
+    except JWSError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail='Could not validate user')    
 
 
-@router.post("/auth", status_code=status.HTTP_201_CREATED)
+@router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_user(db: db_dependency,
                     create_user_request: CreateUserRequest):
     create_user_model = Users(
@@ -57,12 +92,12 @@ async def create_user(db: db_dependency,
     db.add(create_user_model)
     db.commit()
 
-@router.post("/token")
+@router.post("/token",response_model=Token)
 async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
                                 db: db_dependency):
     user = authenticate_user(form_data.username, form_data.password, db)
 
     if not user:
         return 'Failed Authentication'
-    
-    return 'Success Authentication'
+    token = create_access_token(user.username, user.id, timedelta(minutes=10))
+    return {'access_token': token, 'token_type': 'bearer'}
