@@ -3,7 +3,9 @@ from sqlalchemy.orm import sessionmaker # nhà máy sản xuất phiên làm vi�
 from sqlalchemy.ext.declarative import declarative_base # khuôn mẫu để tạo table
 
 
-SQLAlCHEMY_DATABASE_URL = 'sqlite:///./todos.db' # 'sqlite' = loại database || "./todos.db" = File db trong thư mục hiện tại
+# SQLALCHEMY_DATABASE_URL = 'sqlite:///./todosapp.db' # 'sqlite' = loại database || "./todos.db" = File db trong thư mục hiện tại
+SQLALCHEMY_DATABASE_URL = 'postgresql://postgres:123test@localhost/TodoApplicationDatabase' #POSTGRES
+# SQLALCHEMY_DATABASE_URL = 'mysql+pymysql://root:123test@127.0.0.1/TodoApplicationDatabase'
 
 """
 # SQLite mặc định:
@@ -21,9 +23,13 @@ SQLAlCHEMY_DATABASE_URL = 'sqlite:///./todos.db' # 'sqlite' = loại database ||
 # Giải pháp:
 {'check_same_thread': False}
 # → Cho phép nhiều threads cùng truy cập ✅
-"""
-engine = create_engine(SQLAlCHEMY_DATABASE_URL,connect_args={'check_same_thread': False}) # tạo cái brige ==  engine
 
+SQLite: chạy trong một file → kết nối phụ thuộc vào thread tạo ra → cần check_same_thread=False.
+
+PostgreSQL: chạy dưới dạng server → mỗi kết nối độc lập → thread nào cũng dùng được → không cần flag đó.
+"""
+# engine = create_engine(SQLALCHEMY_DATABASE_URL,connect_args={'check_same_thread': False}) # tạo cái brige ==  engine
+engine = create_engine(SQLALCHEMY_DATABASE_URL) 
 
 """
 SessionLocal()  →  Tạo ra 1 session

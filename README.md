@@ -151,3 +151,26 @@ Cho NUMBER (int, float):
 ✅ le - less or equal (≤)
 ❌ min - KHÔNG tồn tại!
 ❌ max - KHÔNG tồn tại!
+
+JWT is a self-contained way to securely transmit data and information between 2 parties using a JSON Object.
+JSON Web Tokens can be trusted because each JWT can be digitally signed, which in return allows the server to know if the
+JWT has been changed at all.
+JWT should be used when dealing with authorization.
+
+Alembic = công cụ quản lý thay đổi cấu trúc database (schema) dành cho SQLAlchemy.
+Nó giúp bạn:
+
+thêm cột
+
+đổi kiểu dữ liệu
+
+rename bảng
+
+xoá bảng
+
+tạo quan hệ
+
+v.v…
+
+…mà không phải tự sửa database thủ công.
+migration là cách “quản lý version” cho database schema giống như git quản lý code. Mục tiêu: database luôn đồng bộ với model code mà không mất dữ liệu.

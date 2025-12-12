@@ -1,15 +1,24 @@
-from fastapi import FastAPI, Depends, HTTPException, Path,APIRouter
-from models import Todos
-from database import  Sessionlocal
+from fastapi import FastAPI, Depends, HTTPException, Path,APIRouter,status, Request
+from ..models import Todos
+from ..database import  Sessionlocal
 from typing import Annotated
 from sqlalchemy.orm import Session
 from starlette import status
 from pydantic import BaseModel, Field 
-from routers import auth
+from starlette.responses import RedirectResponse
+from fastapi.templating import Jinja2Templates
+
+from .auth import get_current_user
+from passlib.context import CryptContext
 
 
-router = APIRouter()
+templates = Jinja2Templates(directory="TodoApp/templates")
 
+
+router = APIRouter(
+    prefix= '/todos',
+    tags=['todos']
+)
 
 def get_db():
     db = Sessionlocal()
@@ -21,12 +30,19 @@ def get_db():
 
 # muốn cho nó có mặt ở mọi điểm endpoint API tức là vầy thay vì m gọi lại db mỗi endpoint m chỉ cần 1 hàm xử lí 
 db_dependency = Annotated[Session, Depends(get_db)]
+user_dependency = Annotated[dict, Depends(get_current_user)]
+
 
 class TodoRequest(BaseModel):
     title : str = Field(min_length=3)
     description : str =Field(min_length=3, max_length=100)
     priority : int =Field(gt=0, lt=6)
     complete : bool
+
+def redirect_to_login():
+    redirect_response = RedirectResponse(url= "/auth/login-page", status_code=status.HTTP_302_FOUND)
+    redirect_response.delete_cookie(key="access_token")
+    return redirect_response
 
 
 """
@@ -36,33 +52,86 @@ Note:
 - row : hàng ngang
 
 """
+### Pages ###
 
+@router.get("/todo-page")
+async def render_todo_page(request: Request, db: db_dependency):
+    try:
+        user = await get_current_user(request.cookies.get('access_token'))
+        if user is None:
+            return RedirectResponse(url='/auth/login-page', status_code=status.HTTP_302_FOUND)
+        todos = db.query(Todos).filter(Todos.owner_id == user.get('id')).all()
+
+        return templates.TemplateResponse("todo.html", {"request": request, "todos": todos, "user": user})
+    except:
+        return redirect_to_login()
+
+@router.get("/add-todo-page")
+async def render_todo_page(request: Request):
+    try:
+        user = await get_current_user(request.cookies.get('access_token'))
+
+        if user is None:
+            return redirect_to_login
+        
+        return templates.TemplateResponse("add-todo.html", {"request": request, "user": user})
+
+    except:
+        return redirect_to_login()
+
+@router.get("/edit-todo-page/{todo_id}")
+async def render_edit_todo_page(request: Request, todo_id: int, db: db_dependency):
+    try:
+        user = await get_current_user(request.cookies.get('access_token'))
+
+        if user is None:
+            return redirect_to_login()
+
+        todo = db.query(Todos).filter(Todos.id == todo_id).first()
+
+        return templates.TemplateResponse("edit-todo.html", {"request": request, "todo": todo, "user": user})
+
+    except:
+        return redirect_to_login()
+
+### Endpoints ###
 
 @router.get("/",status_code=status.HTTP_200_OK)
-async def read_all(db: db_dependency):
-    return db.query(Todos).all()  # add .all to fetch all data
+async def read_all(user: user_dependency, db: db_dependency):
+    if user is None:
+        raise HTTPException(status_code=401, detail='Authentication Failed')
+    return db.query(Todos).filter(Todos.owner_id == user.get('id')).all()  # add .all to fetch all data
 
 @router.get("/todo/{todo_id}", status_code=status.HTTP_200_OK)
-async def read_todo(db: db_dependency, todo_id : int = Path(gt=0)):
-    todo_model = db.query(Todos).filter(Todos.id == todo_id).first()
+async def read_todo(user: user_dependency, db: db_dependency, todo_id : int = Path(gt=0)):
+    if user is None:
+        raise HTTPException(status_code=401, detail='Authentication Failed')
+
+    todo_model = db.query(Todos).filter(Todos.id == todo_id).filter(Todos.owner_id == user.get('id')).first()
     if todo_model is not None:
         return todo_model
     raise HTTPException(status_code=404,detail='Todo not found.')
 
 @router.post("/todo", status_code=status.HTTP_201_CREATED)
-async def create_todo(db: db_dependency, todo_request: TodoRequest):
-    todo_model = Todos(**todo_request.dict()) #Unpack dict thành arguments
+async def create_todo(user: user_dependency, db: db_dependency, todo_request: TodoRequest):
+    if user is None :
+        raise HTTPException(status_code=401, detail='Authentication Failed')
+    
+    todo_model = Todos(**todo_request.dict(), owner_id=user.get('id')) #Unpack dict thành arguments
 
     db.add(todo_model) #-> đưa obj vào Session -> chưa save vào db nhé cưng
     db.commit() # EXECUTE SQL INSERT → LƯU vào database!
     # db.rollback()  # Xóa hàng chờ, không lưu gì cả! 
 
 @router.put("/todo/{todo_id}",status_code=status.HTTP_204_NO_CONTENT)
-async def update_todo(db: db_dependency, 
+async def update_todo(user: user_dependency, db: db_dependency, 
                     todo_request: TodoRequest, 
                     todo_id : int = Path(gt=0)):
     #1. tìm todo
-    todo_model = db.query(Todos).filter(Todos.id == todo_id).first()
+    # todo_model = db.query(Todos).filter(Todos.id == todo_id).first()
+    if user is None:
+        raise HTTPException(status_code=401, detail='Authentication Failed')
+    todo_model = db.query(Todos).filter(Todos.id == todo_id).filter(Todos.owner_id == user.get('id')).first()
 
     # 2. Không tìm thấy → 404
     if todo_model is None: 
@@ -79,12 +148,17 @@ async def update_todo(db: db_dependency,
     db.commit()
 
 @router.delete("/todo/{todo_id}",status_code=status.HTTP_204_NO_CONTENT)
-async def delete_todo(db: db_dependency, 
+async def delete_todo(user: user_dependency, db: db_dependency, 
                     todo_id : int = Path(gt=0)):
 
-    todo_model = db.query(Todos).filter(Todos.id == todo_id).first()
+    if user is None:
+        raise HTTPException(status_code=401, detail='Authentication Failed')
+
+    todo_model = db.query(Todos).filter(Todos.id == todo_id).filter(Todos.owner_id == user.get('id')).first()
 
     if todo_model is None: 
         raise HTTPException(status_code=404, detail='Todo not found.')
     db.query(Todos).filter(Todos.id == todo_id).delete()
+
     db.commit()
+
